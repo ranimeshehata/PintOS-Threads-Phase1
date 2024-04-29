@@ -32,6 +32,9 @@
 #include "threads/interrupt.h"
 #include "threads/thread.h"
 
+static struct thread * getMaxPriority(struct semaphore*);
+static void updatePriorityForLock(struct lock*);
+
 /* Initializes semaphore SEMA to VALUE.  A semaphore is a
    nonnegative integer along with two atomic operators for
    manipulating it:
@@ -68,7 +71,7 @@ sema_down (struct semaphore *sema)
   old_level = intr_disable ();
   while (sema->value == 0) 
     {
-      list_push_back (&sema->waiters, &thread_current ()->elem);
+      list_push_front(&sema->waiters, &thread_current()->elem);  //to make it first in first out
       thread_block ();
     }
   sema->value--;
@@ -113,11 +116,19 @@ sema_up (struct semaphore *sema)
   ASSERT (sema != NULL);
 
   old_level = intr_disable ();
-  if (!list_empty (&sema->waiters)) 
-    thread_unblock (list_entry (list_pop_front (&sema->waiters),
-                                struct thread, elem));
+  /* ------------------------ ADDED ------------------------ */
+  if(!list_empty(&sema->waiters)){
+    struct thread  *maxThread=getMaxPriority(sema);
+    list_remove(&maxThread->elem);
+    thread_unblock(maxThread);
+  }
+/* ------------------------ ADDED ------------------------ */
+
   sema->value++;
   intr_set_level (old_level);
+  /* ------------------------ ADDED ------------------------ */
+  tryThreadYield(); //To check the maximum priority of threads after adding new threads
+/* ------------------------ ADDED ------------------------ */
 }
 
 static void sema_test_helper (void *sema_);
@@ -179,6 +190,10 @@ lock_init (struct lock *lock)
 
   lock->holder = NULL;
   sema_init (&lock->semaphore, 1);
+  /* ------------------------ ADDED ------------------------ */
+  lock->max_priority=0; //not important when initializing
+/* ------------------------ ADDED ------------------------ */
+
 }
 
 /* Acquires LOCK, sleeping until it becomes available if
@@ -196,8 +211,43 @@ lock_acquire (struct lock *lock)
   ASSERT (!intr_context ());
   ASSERT (!lock_held_by_current_thread (lock));
 
-  sema_down (&lock->semaphore);
-  lock->holder = thread_current ();
+  /* ------------------------ ADDED ------------------------ */
+  if(lock->holder !=NULL){
+    enum intr_level old_level=intr_disable();
+    thread_current()->current_lock=lock;
+    if(!thread_mlfqs){
+      int currentPriority=thread_get_priority();
+      struct lock *tempLock=lock;
+      struct thread *tempHolder=lock->holder;
+      while(tempLock->max_priority < currentPriority){
+        tempLock->max_priority=currentPriority;
+        threadUpdatePriority(tempHolder);
+        if(tempHolder->status == THREAD_READY){
+          threadReadyRearrange(tempHolder);
+        }
+        tempLock=tempHolder->current_lock;
+        if(tempLock==NULL){
+          break;
+        }else{
+          tempHolder=tempLock->holder;
+        }
+        ASSERT(tempHolder);
+      }
+    }
+    sema_down(&lock->semaphore);
+    enum intr_level old_level=intr_disable();
+    thread_current()->current_lock=NULL;
+    list_push_back(&thread_current()->locks_held,&lock->elem);
+    lock->holder=thread_current();
+    intr_set_level(old_level);
+    if(!thread_mlfqs){
+      updatePriorityForLock(lock);
+      threadUpdatePriority(thread_current());
+      thread_yield();
+    }
+  }
+/* ------------------------ ADDED ------------------------ */
+
 }
 
 /* Tries to acquires LOCK and returns true if successful or false
@@ -251,6 +301,7 @@ struct semaphore_elem
   {
     struct list_elem elem;              /* List element. */
     struct semaphore semaphore;         /* This semaphore. */
+    int priority;
   };
 
 /* Initializes condition variable COND.  A condition variable
@@ -336,3 +387,9 @@ cond_broadcast (struct condition *cond, struct lock *lock)
   while (!list_empty (&cond->waiters))
     cond_signal (cond, lock);
 }
+
+/* ------------------------ ADDED ------------------------ */
+bool compareLocksByPriority(const struct list_elem *a,const struct list_elem *b,void * aux UNUSED){
+return list_entry (a, struct lock, elem)->max_priority <=list_entry (b, struct lock, elem)->max_priority;
+}
+/* ------------------------ ADDED ------------------------ */
