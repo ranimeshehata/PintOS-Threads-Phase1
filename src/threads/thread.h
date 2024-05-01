@@ -4,6 +4,7 @@
 #include <debug.h>
 #include <list.h>
 #include <stdint.h>
+#include "threads/fixedPoint.h"
 
 /* States in a thread's life cycle. */
 enum thread_status
@@ -23,6 +24,14 @@ typedef int tid_t;
 #define PRI_MIN 0      /* Lowest priority. */
 #define PRI_DEFAULT 31 /* Default priority. */
 #define PRI_MAX 63     /* Highest priority. */
+
+
+/* ------------------------ ADDED ------------------------ */
+#define NICE_MIN -20
+#define NICE_DEFAULT 0
+#define NICE_MAX 20
+#define RECENT_CPU_DEFAULT real_from_int(0) 
+/* ------------------------ ADDED ------------------------ */
 
 /* A kernel thread or user process.
 
@@ -95,6 +104,17 @@ struct thread
    int64_t ticks_remain_toWakeup; /* Number of ticks remaining until the thread wakes up. */
    /* ------------------------ ADDED ------------------------ */
 
+   /* ------------------------ ADDED ------------------------ */
+   int nice;        /* how nice the thread should be to other threads*/
+   real recent_cpu;  /* recent cpu usage */
+   /* ------------------------ ADDED ------------------------ */
+
+   /* ------------------------ ADDED ------------------------ */
+   int realPriority; /* Priority of thread without any donations */
+   struct list locksHeld;
+   struct lock *currentLock;
+   /* ------------------------ ADDED ------------------------ */
+
    /* Shared between thread.c and synch.c. */
    struct list_elem elem; /* List element. */
 
@@ -143,9 +163,21 @@ void thread_set_nice(int);
 int thread_get_recent_cpu(void);
 int thread_get_load_avg(void);
 
+void thread_foreach(thread_action_func *, void *);
 /* ------------------------ ADDED ------------------------ */
 void set_sleeping_threads(int64_t ticks);
 bool compare_ticks(const struct list_elem *a, const struct list_elem *b, void *aux UNUSED);
+
+void recent_cpu_increment(void);
+void load_avg_calc(void);
+void recent_cpu_calc(struct thread *t, void *aux UNUSED);
+void priority_calc(struct thread *t, void *aux UNUSED);
+void all_priority_calc(void);
+
+void tryThreadYield(void);
+bool compareThreadsByPriority(const struct list_elem *a, const struct list_elem *b, void *aux UNUSED);
+void threadUpdatePriority(struct thread *);
+void threadReadyRearrange(struct thread *);
 /* ------------------------ ADDED ------------------------ */
 
 #endif /* threads/thread.h */
