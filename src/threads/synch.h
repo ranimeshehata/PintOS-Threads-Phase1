@@ -22,10 +22,13 @@ struct lock
 {
   struct thread *holder;      /* Thread holding lock (for debugging). */
   struct semaphore semaphore; /* Binary semaphore controlling access. */
+
+
   /* ------------------------ ADDED ------------------------ */
-  struct list_elem elem; // list of locks held of a thread
-  int max_priority;      // max priority of threads locked by a certain lock
+  struct list_elem elem; /* pointer for a lock in the list */
+  int max_priority;      /* the max priority of all threads waiting for the lock */
   /* ------------------------ ADDED ------------------------ */
+
 };
 
 void lock_init(struct lock *);
@@ -33,7 +36,10 @@ void lock_acquire(struct lock *);
 bool lock_try_acquire(struct lock *);
 void lock_release(struct lock *);
 bool lock_held_by_current_thread(const struct lock *);
-void lockUpdatePriority(struct lock * lock);
+
+/* ------------------------ ADDED ------------------------ */
+void update_lock_priority(struct lock *lock);
+/* ------------------------ ADDED ------------------------ */
 
 /* Condition variable. */
 struct condition
@@ -47,16 +53,15 @@ void cond_signal(struct condition *, struct lock *);
 void cond_broadcast(struct condition *, struct lock *);
 
 /* Optimization barrier.
-
    The compiler will not reorder operations across an
    optimization barrier.  See "Optimization Barriers" in the
    reference guide for more information.*/
-#define barrier() asm volatile("" : : : "memory")
+#define barrier() asm volatile("" \
+                               :  \
+                               :  \
+                               : "memory")
 
-/* ------------------------ ADDED ------------------------ */
 struct thread *get_max_thread(struct semaphore *);
-bool compareLocksByPriority(const struct list_elem *, const struct list_elem *, void *);
-bool compareSemaphoreElemByPriority(const struct list_elem *, const struct list_elem *, void *);
-/* ------------------------ ADDED ------------------------ */
-
+bool compare_locks_by_priority(const struct list_elem *, const struct list_elem *, void *);
+bool compare_semaphore_priority(const struct list_elem *, const struct list_elem *, void *);
 #endif /* threads/synch.h */
